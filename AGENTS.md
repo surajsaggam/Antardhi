@@ -1,0 +1,60 @@
+# AGENTS.md — Rules for AI Coding Agents Working on Antardhi
+
+This repo is being built by three AI agents working in parallel (Antigravity IDE, Antigravity CLI, Codex/CLI). Read this file and `PROJECT_SPEC.md` in full before writing any code.
+
+## 1. Source of truth
+
+`PROJECT_SPEC.md` is authoritative for: data schema, formulas, model architecture, and function signatures (Section 13). If your task seems to require deviating from it, STOP and leave a `# TODO(spec-conflict): <reason>` comment instead of silently improvising — financial scoring logic must not be guessed.
+
+## 2. File ownership — stay in your lane
+
+See Section 15 of `PROJECT_SPEC.md` for the exact ownership map. Do not edit files outside your assigned scope. If you need something from another agent's module that doesn't exist yet, write against the interface contract in Section 13 and use a temporary stub/mock — do not implement the other agent's logic yourself.
+
+## 3. The one shared contract
+
+`src/models/__init__.py` (or equivalent) must expose a single function:
+```python
+def score_customer(customer_row) -> dict
+```
+This is the only integration point between the model/explainability layer and the app layer. Never bypass it.
+
+## 4. Coding standards
+
+- Python 3.10+, type hints on all public functions, docstrings in Google style.
+- No hardcoded magic numbers — pull constants from `src/config.py`.
+- Every function in `src/` should be unit-testable in isolation (no hidden global state).
+- Prefer explicit over clever. This code will be walked through live in front of judges — readability matters more than brevity.
+
+## 5. Data & modeling integrity rules
+
+- Never fabricate features a persona wouldn't realistically have (see Section 4 missingness table). Impute with persona-median, not zero.
+- Never blend the anomaly/fraud flag into the credit score. They are separate outputs (Section 2/9 of spec). This is a hard rule, not a style preference.
+- Never report accuracy as the only/primary model metric. Always include ROC-AUC, PR-AUC, KS-statistic, Brier score (Section 14).
+- All claimed performance numbers must come from an actual run against the synthetic test set — do not invent illustrative statistics.
+
+## 6. When blocked or ambiguous
+
+1. Check `PROJECT_SPEC.md` again.
+2. If still ambiguous, make the most reasonable assumption, implement it, and clearly comment `# ASSUMPTION: <what and why>` so a human can review it later.
+3. Do not silently skip a required deliverable — if you can't complete something, leave a clearly marked stub and say so in your final summary.
+
+## 7. Testing — definition of done
+
+Before considering any task complete:
+- Relevant unit tests in `tests/` pass.
+- New functions have at least one test covering a normal case and one edge case (e.g., missing data, zero-confidence customer).
+- Run `pytest` from repo root and confirm no failures before reporting completion.
+
+## 8. Commit hygiene
+
+- Small, scoped commits. One logical change per commit.
+- Commit message format: `[agent-1|agent-2|agent-3] <what changed>`
+- Never commit `data/synthetic_credit_data.csv` if it exceeds a few MB — regenerate via script instead if needed (`.gitignore` should already cover large data artifacts).
+
+## 9. Explainability is not optional polish
+
+Every model-facing agent task should treat SHAP/reason-code output as a first-class deliverable, not an afterthought bolted on at the end. This is the single most heavily judged aspect of the entire prototype per the hackathon's stated criteria (original research, critical thinking).
+
+## 10. Tone for any generated docs/comments
+
+Be factual and specific. Avoid hackathon-buzzword language ("revolutionary," "cutting-edge," "next-gen") in code comments and docstrings — describe what the code actually does.
