@@ -105,7 +105,7 @@ def render_connections(statuses: list[dict[str, Any]]) -> None:
 def render_fingerprint(customer_row: pd.Series) -> None:
     """Show raw-data supporting indicators, not unexposed model components."""
     st.subheader("Financial fingerprint")
-    st.caption("Supporting source-signal indicators from the selected synthetic record — not model-returned Capacity, Stability, or Discipline components.")
+    st.caption("Transparent raw-data supporting signals from the selected synthetic record — not model-returned components.")
     indicators = fingerprint_indicators(customer_row)
     available = {label: value for label, value in indicators.items() if value is not None}
     if not available:

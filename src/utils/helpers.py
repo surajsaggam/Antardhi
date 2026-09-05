@@ -84,9 +84,9 @@ def fingerprint_indicators(customer_row: pd.Series) -> dict[str, float | None]:
                       for column in ("utility_payment_regularity", "telecom_recharge_consistency")]
     available_payments = [value for value in payment_values if pd.notna(value)]
     return {
-        "Capacity": None if pd.isna(active_days) else float(max(0, min(100, active_days / 30 * 100))),
-        "Stability": None if pd.isna(volatility) else float(max(0, min(100, (1 - volatility) * 100))),
-        "Discipline": None if not available_payments else float(sum(available_payments) / len(available_payments) * 100),
+        "UPI Activity": None if pd.isna(active_days) else float(max(0, min(100, active_days / 30 * 100))),
+        "Cashflow Stability": None if pd.isna(volatility) else float(max(0, min(100, (1 - volatility) * 100))),
+        "Payment Consistency": None if not available_payments else float(sum(available_payments) / len(available_payments) * 100),
     }
 
 

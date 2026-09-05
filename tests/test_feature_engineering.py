@@ -18,11 +18,19 @@ def test_fingerprint_indicators_use_available_real_customer_signals() -> None:
     row = pd.Series({"upi_active_days_per_month": 15, "upi_inflow_volatility": 0.25,
                      "utility_payment_regularity": 0.8, "telecom_recharge_consistency": 0.6})
 
-    assert fingerprint_indicators(row) == {"Capacity": 50.0, "Stability": 75.0, "Discipline": 70.0}
+    assert fingerprint_indicators(row) == {
+        "UPI Activity": 50.0,
+        "Cashflow Stability": 75.0,
+        "Payment Consistency": 70.0,
+    }
 
 
 def test_fingerprint_indicators_do_not_treat_missing_sources_as_zero() -> None:
     row = pd.Series({"upi_active_days_per_month": None, "upi_inflow_volatility": None,
                      "utility_payment_regularity": None, "telecom_recharge_consistency": None})
 
-    assert fingerprint_indicators(row) == {"Capacity": None, "Stability": None, "Discipline": None}
+    assert fingerprint_indicators(row) == {
+        "UPI Activity": None,
+        "Cashflow Stability": None,
+        "Payment Consistency": None,
+    }
