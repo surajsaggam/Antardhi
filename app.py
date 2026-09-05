@@ -1,4 +1,4 @@
-"""Antardhi's consent-led alternative-data credit demo."""
+"""Antardhi's internal alternative-data credit underwriting demo."""
 
 from __future__ import annotations
 
@@ -26,11 +26,9 @@ def load_customers() -> pd.DataFrame:
 
 
 def initialise_session(customers: pd.DataFrame) -> None:
-    """Create app state without storing or collecting external source data."""
+    """Create app state for local synthetic-demo profile selection."""
     defaults: dict[str, Any] = {
-        "customer_name": "Demo Applicant",
         "persona": "Gig Worker",
-        "consents": {key: False for key in SOURCE_LABELS},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -61,11 +59,10 @@ def get_score_result(customer_row: pd.Series) -> dict[str, Any] | None:
         return None
 
 
-def render_onboarding(customers: pd.DataFrame) -> None:
-    """Show source-specific, revocable onboarding consent controls."""
-    st.subheader("Onboarding & consent")
-    st.caption("Nothing is connected or collected without a separate opt-in.")
-    st.session_state.customer_name = st.text_input("Customer name", st.session_state.customer_name)
+def render_applicant_context(customers: pd.DataFrame) -> None:
+    """Show the selected synthetic applicant and available demo-data sources."""
+    st.subheader("Applicant & data context")
+    st.caption("Internal employee / underwriter view")
     st.session_state.persona = st.selectbox("Occupation / persona", list(PERSONA_SOURCES),
                                              index=list(PERSONA_SOURCES).index(st.session_state.persona))
     customer_ids = customers.loc[customers["persona"] == st.session_state.persona, "customer_id"].tolist()
@@ -73,33 +70,27 @@ def render_onboarding(customers: pd.DataFrame) -> None:
         st.session_state.demo_customer_id = customer_ids[0]
     st.selectbox("Synthetic demo customer", customer_ids, key="demo_customer_id",
                  format_func=lambda customer_id: f"Profile {customer_id[:8]}")
-    st.caption("The selected profile comes from the local synthetic dataset; it is not a live customer-data connection.")
-    st.markdown("#### Data permissions")
+    st.info("This is an internal underwriting prototype. Applicant records are synthetic and no live financial accounts are connected.")
+    st.markdown("#### Alternative-data availability in the synthetic dataset")
     for key, label in SOURCE_LABELS.items():
         applicable = key in PERSONA_SOURCES[st.session_state.persona]
-        state_key = f"consent_{key}"
-        if state_key not in st.session_state:
-            st.session_state[state_key] = st.session_state.consents[key]
-        st.checkbox(f"I consent to use my {label.lower()} for this assessment", key=state_key,
-                    disabled=not applicable,
-                    help=None if applicable else "Not normally available for this persona.")
-        st.session_state.consents[key] = bool(st.session_state[state_key]) if applicable else False
-    st.info("You may withdraw any permission by unchecking it. Unavailable sources are not bad-data signals.")
+        status = "Available for this persona" if applicable else "Unavailable for this persona"
+        st.write(f"{'✓' if applicable else '—'} **{label}** — {status}")
+    st.caption("Availability describes the local synthetic dataset only; no UPI, GST, utility, telecom, e-commerce, or mobility APIs are connected.")
 
 
 def render_connections(statuses: list[dict[str, Any]]) -> None:
-    """Show source coverage without treating unavailable sources as poor quality."""
-    st.subheader("Data connection status")
+    """Show synthetic-data availability without treating unavailable sources as poor quality."""
+    st.subheader("Data availability status")
     coverage = coverage_percent(statuses)
     left, right = st.columns([1, 2])
-    left.metric("Consented coverage", f"{coverage}%")
+    left.metric("Synthetic-data coverage", f"{coverage}%")
     left.progress(coverage / 100)
     with right:
         for item in statuses:
-            text = "Unavailable for this persona" if not item["available_for_persona"] else (
-                "Connected with consent" if item["connected"] else "Available, but not shared")
-            st.write(f"{'✅' if item['connected'] else '○'} **{item['source']}** — {text}")
-    st.caption("Unavailable describes persona fit; it does not mean bad data or higher customer risk.")
+            text = "Unavailable for this persona" if not item["available_for_persona"] else "Available in the synthetic dataset"
+            st.write(f"{'✓' if item['available_for_persona'] else '—'} **{item['source']}** — {text}")
+    st.caption("This is local synthetic-data availability, not a live connection. Unavailable describes persona fit; it does not mean bad data or higher customer risk.")
 
 
 def render_fingerprint(customer_row: pd.Series) -> None:
@@ -205,19 +196,22 @@ def main() -> None:
     initialise_session(customers)
     st.title(APP_TITLE)
     st.markdown("*Don’t ask if the customer has a credit history. Ask what their financial behavior already proves.*")
-    st.caption("Consent-led alternative-data credit demo")
-    screens = ["1. Onboarding & Consent", "2. Data Connection Status", "3. Financial Fingerprint",
+    st.caption("Internal underwriter-facing alternative-data credit demo")
+    screens = ["1. Applicant & Data Context", "2. Data Availability Status", "3. Financial Fingerprint",
                "4. Credit Decision", "5. Explainability + What-If"]
     selected = st.radio("Demo screen", screens, horizontal=True, label_visibility="collapsed")
     if selected == screens[0]:
-        render_onboarding(customers)
+        render_applicant_context(customers)
         return
     try:
         customer_row = selected_customer(customers)
     except ValueError as error:
         st.error(str(error))
         return
-    statuses = source_connection_status(st.session_state.persona, st.session_state.consents)
+    synthetic_source_availability = {
+        key: key in PERSONA_SOURCES[st.session_state.persona] for key in SOURCE_LABELS
+    }
+    statuses = source_connection_status(st.session_state.persona, synthetic_source_availability)
     if selected == screens[1]:
         render_connections(statuses)
     elif selected == screens[2]:
