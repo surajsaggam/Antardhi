@@ -15,11 +15,15 @@ import {
   Car,
   Activity,
   Info,
+  HelpCircle,
 } from "lucide-react";
+import { PieChart, Pie, Cell } from "recharts";
 import { useApplicant } from "../context/ApplicantContext";
 import {
   getApplicantProfile,
+  getAssessment,
   type ApplicantProfileResponse,
+  type AssessmentResponse,
 } from "../services/api";
 
 const DATA_SOURCES_CONFIG = [
@@ -70,9 +74,15 @@ export const AssessmentPage: React.FC = () => {
   const customerIdFromUrl = searchParams.get("id")?.trim() || "";
   const [activeCustomerId, setActiveCustomerId] = useState<string>("");
 
+  // Data states
   const [profile, setProfile] = useState<ApplicantProfileResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
+
+  // Loading & Error states
+  const [loadingProfile, setLoadingProfile] = useState<boolean>(false);
+  const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
 
   // Sync active customer ID
   useEffect(() => {
@@ -84,32 +94,67 @@ export const AssessmentPage: React.FC = () => {
     } else {
       setActiveCustomerId("");
       setProfile(null);
+      setAssessment(null);
     }
   }, [selectedApplicant, customerIdFromUrl, selectCustomerById]);
 
-  // Fetch applicant profile whenever active customer ID changes
-  const loadProfile = async (id: string) => {
+  // Fetch applicant profile and assessment in parallel
+  const loadData = async (id: string) => {
     if (!id) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getApplicantProfile(id);
-      setProfile(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load applicant profile data");
-    } finally {
-      setLoading(false);
-    }
+
+    // Load Profile
+    setLoadingProfile(true);
+    setProfileError(null);
+    getApplicantProfile(id)
+      .then((data) => setProfile(data))
+      .catch((err) => setProfileError(err.message || "Failed to load profile"))
+      .finally(() => setLoadingProfile(false));
+
+    // Load Assessment
+    setLoadingAssessment(true);
+    setAssessmentError(null);
+    getAssessment(id)
+      .then((data) => setAssessment(data))
+      .catch((err) =>
+        setAssessmentError(err.message || "Failed to score applicant")
+      )
+      .finally(() => setLoadingAssessment(false));
   };
 
   useEffect(() => {
     if (activeCustomerId) {
-      loadProfile(activeCustomerId);
+      loadData(activeCustomerId);
     }
   }, [activeCustomerId]);
 
+  const getTierColor = (tier: string) => {
+    switch (tier) {
+      case "Low Risk":
+        return "#16a34a"; // emerald-600
+      case "Medium Risk":
+        return "#d97706"; // amber-600
+      case "High Risk":
+        return "#dc2626"; // rose-600
+      default:
+        return "#0284c7"; // sky-600
+    }
+  };
+
+  const getTierBadgeClass = (tier: string) => {
+    switch (tier) {
+      case "Low Risk":
+        return "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200";
+      case "Medium Risk":
+        return "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200";
+      case "High Risk":
+        return "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200";
+      default:
+        return "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200";
+    }
+  };
+
   // Case 1: EMPTY STATE - No applicant selected
-  if (!activeCustomerId && !loading) {
+  if (!activeCustomerId && !loadingProfile) {
     return (
       <div className="space-y-6">
         <div>
@@ -145,25 +190,25 @@ export const AssessmentPage: React.FC = () => {
     );
   }
 
-  // Case 2: LOADING STATE
-  if (loading && !profile) {
+  // Case 2: GLOBAL INITIAL LOADING STATE (before active ID has any data)
+  if (loadingProfile && !profile && !assessment) {
     return (
       <div className="space-y-6">
         <div className="py-20 text-center">
           <RefreshCw className="w-6 h-6 text-sky-600 animate-spin mx-auto mb-3" />
           <div className="text-sm font-semibold text-slate-800">
-            Loading applicant profile...
+            Loading applicant assessment workspace...
           </div>
           <div className="text-xs text-slate-400 mt-1 font-mono">
-            Fetching data coverage & financial signals for {activeCustomerId}
+            Fetching data coverage, signals & scorecard for {activeCustomerId}
           </div>
         </div>
       </div>
     );
   }
 
-  // Case 3: ERROR STATE
-  if (error && !profile) {
+  // Case 3: PROFILE ERROR STATE
+  if (profileError && !profile) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -179,14 +224,14 @@ export const AssessmentPage: React.FC = () => {
         <div className="bg-rose-50 border border-rose-200 rounded-lg p-6 max-w-2xl mx-auto text-center">
           <AlertCircle className="w-8 h-8 text-rose-600 mx-auto mb-2" />
           <h3 className="text-base font-semibold text-rose-900">
-            Unable to Load Applicant Profile
+            Unable to Load Applicant Dossier
           </h3>
           <p className="text-xs text-rose-700 mt-1 max-w-md mx-auto">
-            {error}
+            {profileError}
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
-              onClick={() => loadProfile(activeCustomerId)}
+              onClick={() => loadData(activeCustomerId)}
               className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-white border border-rose-300 text-rose-700 text-xs font-medium hover:bg-rose-50 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -207,6 +252,8 @@ export const AssessmentPage: React.FC = () => {
 
   const dataCoverage = profile?.data_coverage;
   const financialSignals = profile?.financial_signals;
+  const scoreVal = assessment ? Math.max(300, Math.min(900, assessment.score)) : 300;
+  const tierColor = assessment ? getTierColor(assessment.tier) : "#0284c7";
 
   return (
     <div className="space-y-6">
@@ -238,11 +285,11 @@ export const AssessmentPage: React.FC = () => {
               </span>
               <span className="text-slate-300">&bull;</span>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-                {profile?.persona}
+                {profile?.persona || "Synthetic Applicant"}
               </span>
             </div>
             <div className="text-xl font-bold font-mono text-slate-900 mt-1">
-              {profile?.customer_id}
+              {profile?.customer_id || activeCustomerId}
             </div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-sky-600" />
@@ -254,12 +301,16 @@ export const AssessmentPage: React.FC = () => {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => loadProfile(activeCustomerId)}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-xs font-medium text-slate-700 transition-colors"
-              title="Refresh profile data"
+              onClick={() => loadData(activeCustomerId)}
+              disabled={loadingProfile || loadingAssessment}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-xs font-medium text-slate-700 transition-colors disabled:opacity-50"
+              title="Refresh dossier & scorecard"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  loadingProfile || loadingAssessment ? "animate-spin" : ""
+                }`}
+              />
               <span>Refresh Profile</span>
             </button>
           </div>
@@ -280,7 +331,7 @@ export const AssessmentPage: React.FC = () => {
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-800 text-xs font-semibold self-start sm:self-auto border border-slate-200">
             <span className="font-mono text-sky-700 font-bold">
-              {dataCoverage?.available_count} of {dataCoverage?.total_count}
+              {dataCoverage?.available_count || 0} of {dataCoverage?.total_count || 6}
             </span>{" "}
             sources available
           </div>
@@ -289,7 +340,9 @@ export const AssessmentPage: React.FC = () => {
         {/* Clean Horizontal Source-Availability Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {DATA_SOURCES_CONFIG.map((source) => {
-            const isAvailable = dataCoverage ? Boolean(dataCoverage[source.key]) : false;
+            const isAvailable = dataCoverage
+              ? Boolean(dataCoverage[source.key])
+              : false;
             const IconComponent = source.icon;
 
             return (
@@ -478,16 +531,245 @@ export const AssessmentPage: React.FC = () => {
         </div>
       </div>
 
+      {/* SECTION 4: CREDIT DECISION PANEL */}
+      <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Credit Decision
+              </h2>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+                Scorecard Output
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Alternative-data multi-model assessment and risk tier calibration
+            </p>
+          </div>
+
+          <div className="text-[11px] text-slate-500 font-mono self-start sm:self-auto">
+            Engine: Frozen LightGBM Challenger
+          </div>
+        </div>
+
+        {/* Loading State for Assessment */}
+        {loadingAssessment && !assessment && (
+          <div className="py-12 text-center">
+            <RefreshCw className="w-6 h-6 text-sky-600 animate-spin mx-auto mb-2" />
+            <div className="text-sm font-semibold text-slate-800">
+              Evaluating applicant creditworthiness...
+            </div>
+            <div className="text-xs text-slate-400 mt-0.5">
+              Running POST /api/assessment against multi-vertical model
+            </div>
+          </div>
+        )}
+
+        {/* Error State for Assessment */}
+        {assessmentError && !assessment && (
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 text-sm text-rose-700 flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 mt-0.5" />
+              <div>
+                <div className="font-semibold">Unable to complete credit scoring</div>
+                <div className="text-xs mt-0.5 text-rose-600">
+                  {assessmentError}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => loadData(activeCustomerId)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-rose-300 rounded text-xs font-medium text-rose-700 hover:bg-rose-100 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Real Assessment Result Display */}
+        {assessment && (
+          <div className="space-y-6">
+            {/* Top Row: Gauge + Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* Left Column: Circular Score Gauge */}
+              <div className="flex flex-col items-center justify-center p-4 bg-slate-50/50 rounded-lg border border-slate-100">
+                <div className="relative w-[220px] h-[190px] flex items-center justify-center">
+                  <PieChart width={220} height={190}>
+                    <Pie
+                      data={[
+                        { value: Math.max(0, scoreVal - 300) },
+                        { value: Math.max(0, 900 - scoreVal) },
+                      ]}
+                      cx={110}
+                      cy={95}
+                      startAngle={225}
+                      endAngle={-45}
+                      innerRadius={68}
+                      outerRadius={86}
+                      stroke="none"
+                      dataKey="value"
+                    >
+                      <Cell fill={tierColor} />
+                      <Cell fill="#e2e8f0" />
+                    </Pie>
+                  </PieChart>
+
+                  {/* Centered Score Inside Circular Gauge */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-4xl font-bold font-mono text-slate-900 tracking-tight">
+                      {assessment.score}
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">
+                      Composite Credit Score
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      Scale: 300–900
+                    </span>
+                  </div>
+                </div>
+
+                {/* Below Gauge: Exact Tier Badge */}
+                <div className="text-center mt-1">
+                  <span className={getTierBadgeClass(assessment.tier)}>
+                    {assessment.tier}
+                  </span>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    {assessment.tier === "Low Risk" && "Policy Threshold: 750–900"}
+                    {assessment.tier === "Medium Risk" && "Policy Threshold: 600–749"}
+                    {assessment.tier === "High Risk" && "Policy Threshold: 300–599"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Confidence & Anomaly (Visually Separate Cards) */}
+              <div className="flex flex-col justify-center gap-3.5">
+                {/* Confidence Card */}
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Confidence
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      Data Depth
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
+                    {assessment.confidence.toFixed(1)}%
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
+                    <div
+                      className="bg-slate-700 h-1.5 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(0, assessment.confidence)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1.5">
+                    Reflects transaction history length and connected data vertical coverage
+                  </div>
+                </div>
+
+                {/* Anomaly Card */}
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        Anomaly
+                      </span>
+                      <div className="group relative cursor-pointer">
+                        <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600 transition-colors" />
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-slate-900 text-white text-[11px] rounded shadow-xl z-30 pointer-events-none leading-relaxed">
+                          Anomaly reflects unusual behavioral patterns, independent of creditworthiness.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      Integrity Signal
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-2xl font-bold font-mono text-slate-900">
+                      {assessment.anomaly_flag}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-medium">
+                      Isolated from credit score
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+                    <Info className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                    <span>
+                      Anomaly reflects unusual behavioral patterns, independent of creditworthiness.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Row: Recommended Financing */}
+            <div className="pt-5 border-t border-slate-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Recommended Financing
+                </h3>
+                <span className="text-[11px] text-slate-400">
+                  Policy Loan Recommendation &bull; Directly from Engine
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-xs text-slate-500">Recommended Loan</div>
+                  <div className="text-xl font-bold font-mono text-slate-900 mt-1">
+                    ₹{assessment.recommended_loan.toLocaleString("en-IN")}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Calibrated to alternative income proxy
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-xs text-slate-500">Tenure</div>
+                  <div className="text-xl font-bold font-mono text-slate-900 mt-1">
+                    {assessment.recommended_tenure_months} months
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Policy amortization duration
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-xs text-slate-500">Estimated EMI</div>
+                  <div className="text-xl font-bold font-mono text-slate-900 mt-1">
+                    ₹{assessment.recommended_emi.toLocaleString("en-IN", {
+                      maximumFractionDigits: 0,
+                    })}{" "}
+                    <span className="text-xs font-normal text-slate-500">/ month</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Monthly reducing balance amortization
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* RESERVED WORKSPACE FOR UPCOMING MODULES */}
-      <div className="border border-dashed border-slate-300 rounded-lg p-8 bg-white/50 text-center space-y-2">
-        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-          <Activity className="w-5 h-5" />
+      <div className="border border-dashed border-slate-300 rounded-lg p-6 bg-white/50 text-center space-y-1.5">
+        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+          <Activity className="w-4 h-4" />
         </div>
-        <div className="text-sm font-semibold text-slate-700">
-          Underwriting Decision & Explainability Workspace
+        <div className="text-xs font-semibold text-slate-700">
+          Explainability & Simulation Workspace
         </div>
-        <p className="text-xs text-slate-400 max-w-md mx-auto">
-          Credit Decision Scorecard, Risk Tiers, SHAP adverse reason codes, and Path-to-Eligibility (What-If simulator) will be unlocked in subsequent steps.
+        <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+          SHAP adverse reason codes and Path-to-Eligibility (What-If simulator) will unlock in subsequent steps.
         </p>
       </div>
     </div>
