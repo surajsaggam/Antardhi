@@ -13,17 +13,23 @@ import {
   PhoneCall,
   ShoppingBag,
   Car,
-  Activity,
   Info,
   HelpCircle,
+  TrendingUp,
+  TrendingDown,
+  Sliders,
+  ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 import { PieChart, Pie, Cell } from "recharts";
 import { useApplicant } from "../context/ApplicantContext";
 import {
   getApplicantProfile,
   getAssessment,
+  runWhatIf,
   type ApplicantProfileResponse,
   type AssessmentResponse,
+  type WhatIfResponse,
 } from "../services/api";
 
 const DATA_SOURCES_CONFIG = [
@@ -78,11 +84,47 @@ export const AssessmentPage: React.FC = () => {
   const [profile, setProfile] = useState<ApplicantProfileResponse | null>(null);
   const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
 
+  // What-If Simulation state
+  const [whatIfResult, setWhatIfResult] = useState<WhatIfResponse | null>(null);
+  const [loadingWhatIf, setLoadingWhatIf] = useState<boolean>(false);
+  const [whatIfError, setWhatIfError] = useState<string | null>(null);
+
+  // Behavior controls
+  const [inflowPct, setInflowPct] = useState<number>(0);
+  const [improveUtility, setImproveUtility] = useState<boolean>(false);
+
   // Loading & Error states
   const [loadingProfile, setLoadingProfile] = useState<boolean>(false);
   const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+
+  // Execute What-If simulation against /api/what-if
+  const executeWhatIf = async (
+    id: string,
+    inflow: number,
+    targetUtility: boolean
+  ) => {
+    if (!id) return;
+    setLoadingWhatIf(true);
+    setWhatIfError(null);
+
+    const targetChange: Record<string, unknown> = {
+      inflow_pct: inflow,
+    };
+    if (targetUtility) {
+      targetChange.utility_payment_regularity = 0.95;
+    }
+
+    try {
+      const res = await runWhatIf(id, targetChange);
+      setWhatIfResult(res);
+    } catch (err: any) {
+      setWhatIfError(err.message || "Failed to execute what-if simulation");
+    } finally {
+      setLoadingWhatIf(false);
+    }
+  };
 
   // Sync active customer ID
   useEffect(() => {
@@ -95,12 +137,21 @@ export const AssessmentPage: React.FC = () => {
       setActiveCustomerId("");
       setProfile(null);
       setAssessment(null);
+      setWhatIfResult(null);
+      setWhatIfError(null);
+      setInflowPct(0);
+      setImproveUtility(false);
     }
   }, [selectedApplicant, customerIdFromUrl, selectCustomerById]);
 
   // Fetch applicant profile and assessment in parallel
   const loadData = async (id: string) => {
     if (!id) return;
+
+    // Reset simulator controls
+    setInflowPct(0);
+    setImproveUtility(false);
+    setWhatIfError(null);
 
     // Load Profile
     setLoadingProfile(true);
@@ -114,7 +165,11 @@ export const AssessmentPage: React.FC = () => {
     setLoadingAssessment(true);
     setAssessmentError(null);
     getAssessment(id)
-      .then((data) => setAssessment(data))
+      .then((data) => {
+        setAssessment(data);
+        // Automatically run initial What-If with neutral baseline (0% change)
+        executeWhatIf(id, 0, false);
+      })
       .catch((err) =>
         setAssessmentError(err.message || "Failed to score applicant")
       )
@@ -760,18 +815,426 @@ export const AssessmentPage: React.FC = () => {
         )}
       </div>
 
-      {/* RESERVED WORKSPACE FOR UPCOMING MODULES */}
-      <div className="border border-dashed border-slate-300 rounded-lg p-6 bg-white/50 text-center space-y-1.5">
-        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-          <Activity className="w-4 h-4" />
+      {/* SECTION 5: SHAP EXPLAINABILITY & WHAT-IF SIMULATOR */}
+      {assessment && (
+        <div className="space-y-6">
+          {/* SECTION A — SHAP ADVERSE REASON CODES */}
+          <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                    SHAP Adverse Reason Codes
+                  </h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    Explainability Layer
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Model-derived feature drivers ranked by explainability impact. Impact indicates whether the factor contributed positively or negatively to the credit assessment.
+                </p>
+              </div>
+              <div className="text-[11px] text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200 whitespace-nowrap self-start sm:self-auto font-mono">
+                TreeExplainer &bull; Ranked Top-5
+              </div>
+            </div>
+
+            {/* 5 Reason Cards */}
+            <div className="space-y-2.5">
+              {assessment.reason_codes.map((rc, idx) => {
+                const isPositive = rc.impact === "+";
+                return (
+                  <div
+                    key={`${rc.factor}-${idx}`}
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-lg border transition-colors ${
+                      isPositive
+                        ? "bg-slate-50/70 border-emerald-100 hover:border-emerald-200"
+                        : "bg-slate-50/70 border-rose-100 hover:border-rose-200"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="w-6 h-6 rounded flex items-center justify-center text-xs font-mono font-bold bg-slate-200/80 text-slate-700 flex-shrink-0 mt-0.5">
+                        #{idx + 1}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold font-mono text-slate-900">
+                            {rc.factor}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {rc.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 sm:mt-0 flex items-center gap-2 pl-9 sm:pl-0">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                          isPositive
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}
+                      >
+                        {isPositive ? (
+                          <>
+                            <TrendingUp className="w-3.5 h-3.5" />
+                            Positive Driver (+)
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-3.5 h-3.5" />
+                            Adverse Driver (-)
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 pt-1">
+              <Info className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+              <span>
+                Underwriting Note: Impact indicates whether each marginal factor contributed positively (+) or negatively (-) to the composite assessment relative to the segment baseline.
+              </span>
+            </div>
+          </div>
+
+          {/* SECTION B — PATH TO ELIGIBILITY / WHAT-IF SIMULATOR */}
+          <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                    Path to Eligibility / What-If Simulator
+                  </h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    Counterfactual Sandbox
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Adjust candidate behavioral parameters to simulate counterfactual credit score improvement, risk tier migration, and calibrated loan capacity.
+                </p>
+              </div>
+              <div className="text-[11px] text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200 whitespace-nowrap self-start sm:self-auto font-mono">
+                POST /api/what-if
+              </div>
+            </div>
+
+            {/* Behavior Controls */}
+            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-blue-600" />
+                  Behavior Controls
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInflowPct(0);
+                    setImproveUtility(false);
+                    executeWhatIf(activeCustomerId, 0, false);
+                  }}
+                  disabled={loadingWhatIf || (inflowPct === 0 && !improveUtility)}
+                  className="text-[11px] text-slate-600 hover:text-slate-900 flex items-center gap-1 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset to Baseline (0%)
+                </button>
+              </div>
+
+              {/* Control 1: Inflow Percentage Slider & Presets */}
+              <div className="space-y-2 bg-white p-3.5 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label htmlFor="inflow-slider" className="text-xs font-semibold text-slate-800">
+                      Monthly UPI Cashflow Growth (<code className="font-mono text-slate-600">inflow_pct</code>)
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Simulate average monthly transaction inflow adjustment across UPI channels
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      id="inflow-pct-display"
+                      className={`text-sm font-mono font-bold px-2 py-0.5 rounded ${
+                        inflowPct > 0
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : inflowPct < 0
+                          ? "bg-rose-50 text-rose-700 border border-rose-200"
+                          : "bg-slate-100 text-slate-700 border border-slate-200"
+                      }`}
+                    >
+                      {inflowPct > 0 ? `+${inflowPct}%` : `${inflowPct}%`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 pt-1">
+                  <input
+                    id="inflow-slider"
+                    type="range"
+                    min="-20"
+                    max="50"
+                    step="5"
+                    value={inflowPct}
+                    onChange={(e) => setInflowPct(Number(e.target.value))}
+                    disabled={loadingWhatIf}
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                </div>
+
+                {/* Preset Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-slate-400 font-medium mr-1">Presets:</span>
+                  {[-10, 0, 10, 20, 30, 50].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setInflowPct(preset)}
+                      disabled={loadingWhatIf}
+                      className={`px-2 py-0.5 text-[11px] font-mono rounded border transition-colors ${
+                        inflowPct === preset
+                          ? "bg-blue-600 text-white border-blue-600 font-semibold"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {preset > 0 ? `+${preset}%` : `${preset}%`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Control 2: Utility Payment Regularity Target */}
+              <div className="flex items-center justify-between bg-white p-3.5 rounded-lg border border-slate-200">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="utility-toggle" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                      Target Utility Payment Regularity (<code className="font-mono text-slate-600">utility_payment_regularity</code>)
+                    </label>
+                    <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200">
+                      Target: 0.95 (95%)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Simulate improved discipline: on-time utility bill payment consistency at 95%
+                  </p>
+                </div>
+                <input
+                  id="utility-toggle"
+                  type="checkbox"
+                  checked={improveUtility}
+                  onChange={(e) => setImproveUtility(e.target.checked)}
+                  disabled={loadingWhatIf}
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                />
+              </div>
+
+              {/* Action Bar */}
+              <div className="flex items-center justify-between pt-1">
+                <div className="text-[11px] text-slate-500">
+                  Select parameters above and execute counterfactual simulation
+                </div>
+                <button
+                  type="button"
+                  id="recalculate-what-if-btn"
+                  onClick={() => executeWhatIf(activeCustomerId, inflowPct, improveUtility)}
+                  disabled={loadingWhatIf}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingWhatIf ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Recalculating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Recalculate What-If</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Error State */}
+            {whatIfError && (
+              <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <span className="font-semibold">Simulation Error: </span>
+                  {whatIfError}
+                </div>
+              </div>
+            )}
+
+            {/* Results Comparison Grid */}
+            {whatIfResult && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Card 1: Score Transition & Delta */}
+                  <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-500">Score Transition</span>
+                      <span
+                        id="whatif-score-delta-badge"
+                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
+                          whatIfResult.delta > 0
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : whatIfResult.delta < 0
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-slate-50 text-slate-600 border-slate-200"
+                        }`}
+                      >
+                        {whatIfResult.delta > 0 ? `+${whatIfResult.delta} pts` : `${whatIfResult.delta} pts`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Current</div>
+                        <div className="text-2xl font-bold font-mono text-slate-700">
+                          {whatIfResult.current_score}
+                        </div>
+                      </div>
+
+                      <ArrowRight className="w-5 h-5 text-slate-400" />
+
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Projected</div>
+                        <div id="whatif-projected-score" className="text-2xl font-bold font-mono text-slate-900">
+                          {whatIfResult.new_score}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+                      Score range: 300 – 900
+                    </div>
+                  </div>
+
+                  {/* Card 2: Risk Tier Transition */}
+                  <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-500">Risk Tier Transition</span>
+                      {whatIfResult.current_tier !== whatIfResult.new_tier ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Tier Migration
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                          Unchanged
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Current Tier</div>
+                        <div className="mt-1">
+                          <span className={getTierBadgeClass(whatIfResult.current_tier)}>
+                            {whatIfResult.current_tier}
+                          </span>
+                        </div>
+                      </div>
+
+                      <ArrowRight className="w-5 h-5 text-slate-400 mt-3" />
+
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Projected Tier</div>
+                        <div className="mt-1">
+                          <span id="whatif-projected-tier" className={getTierBadgeClass(whatIfResult.new_tier)}>
+                            {whatIfResult.new_tier}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+                      Thresholds: Low (&ge;750), Med (&ge;600), High (&lt;600)
+                    </div>
+                  </div>
+
+                  {/* Card 3: Recommended Loan Transition */}
+                  <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-500">Recommended Loan</span>
+                      <span
+                        id="whatif-loan-delta-badge"
+                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
+                          whatIfResult.loan_delta > 0
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : whatIfResult.loan_delta < 0
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-slate-50 text-slate-600 border-slate-200"
+                        }`}
+                      >
+                        {whatIfResult.loan_delta > 0
+                          ? `+₹${whatIfResult.loan_delta.toLocaleString("en-IN")}`
+                          : `₹${whatIfResult.loan_delta.toLocaleString("en-IN")}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Current</div>
+                        <div className="text-lg font-bold font-mono text-slate-700">
+                          ₹{whatIfResult.current_loan.toLocaleString("en-IN")}
+                        </div>
+                      </div>
+
+                      <ArrowRight className="w-5 h-5 text-slate-400" />
+
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Projected</div>
+                        <div id="whatif-projected-loan" className="text-lg font-bold font-mono text-slate-900">
+                          ₹{whatIfResult.new_loan.toLocaleString("en-IN")}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+                      Calibrated capacity from simulated cashflow proxy
+                    </div>
+                  </div>
+                </div>
+
+                {/* Projected Terms (Tenure & EMI) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] text-slate-500 font-medium">Projected Tenure</div>
+                      <div className="text-[11px] text-slate-400">Policy amortization duration</div>
+                    </div>
+                    <div id="whatif-projected-tenure" className="text-base font-mono font-bold text-slate-900">
+                      {whatIfResult.recommended_tenure_months} months
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] text-slate-500 font-medium">Projected Monthly EMI</div>
+                      <div className="text-[11px] text-slate-400">Reducing balance amortization</div>
+                    </div>
+                    <div id="whatif-projected-emi" className="text-base font-mono font-bold text-slate-900">
+                      ₹{whatIfResult.recommended_emi.toLocaleString("en-IN", { maximumFractionDigits: 0 })}{" "}
+                      <span className="text-xs font-normal text-slate-500">/ mo</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Simulation Disclaimer */}
+            <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200 text-amber-900 flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed">
+                <span className="font-semibold">Underwriting Notice: </span>
+                Simulation only — changing one behavior does not guarantee approval or disbursement. All outcomes remain contingent on final KYC, fraud clearance, and credit committee approval.
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="text-xs font-semibold text-slate-700">
-          Explainability & Simulation Workspace
-        </div>
-        <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-          SHAP adverse reason codes and Path-to-Eligibility (What-If simulator) will unlock in subsequent steps.
-        </p>
-      </div>
+      )}
     </div>
   );
 };
