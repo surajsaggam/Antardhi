@@ -249,7 +249,10 @@ def map_to_reason_codes(shap_dict: dict) -> list[dict]: ...
 def simulate_improvement(customer_row: pd.Series, target_change: dict) -> dict: ...
     # {'new_score':.., 'new_tier':.., 'delta':..}
 
-# ⭐ MASTER ORCHESTRATOR — app.py should ONLY ever call this function
+# MASTER ORCHESTRATOR
+# Implemented in src/models/__init__.py
+# app.py should ONLY ever call this function
+
 def score_customer(customer_row: pd.Series) -> dict:
     """
     Returns:
@@ -282,7 +285,7 @@ Report ROC-AUC, PR-AUC, KS-statistic, and Brier score — never accuracy alone (
 | **Agent 2 — Models & Explainability** | `src/models/*`, `src/explainability/*`, `src/simulation/*`, `notebooks/02_*`, `tests/test_model_inference.py` |
 | **Agent 3 — App & Integration** | `app.py`, `src/utils/*`, `assets/*`, `tests/test_feature_engineering.py`, `setup.py`, `requirements.txt`, `README.md` |
 
-Agent 3 must only call `score_customer()` — never reach into Agent 2's internal functions directly. This is what lets all three work in parallel without merge conflicts.
+Agent 2 owns `src/models/__init__.py` and implements `score_customer()`. Agent 3 owns `app.py` and must only call `score_customer()` — never reach into Agent 2's internal functions directly, and never modify `src/models/__init__.py`. This is what lets all three work in parallel without merge conflicts.
 
 ---
 

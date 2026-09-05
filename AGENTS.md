@@ -8,15 +8,45 @@ This repo is being built by three AI agents working in parallel (Antigravity IDE
 
 ## 2. File ownership — stay in your lane
 
-See Section 15 of `PROJECT_SPEC.md` for the exact ownership map. Do not edit files outside your assigned scope. If you need something from another agent's module that doesn't exist yet, write against the interface contract in Section 13 and use a temporary stub/mock — do not implement the other agent's logic yourself.
+See Section 15 of `PROJECT_SPEC.md` for the exact ownership map. Do not edit files outside your assigned scope:
+- **Agent 1:** `src/data/*`, `src/features/*`, `notebooks/01_exploratory_analysis.ipynb`, `data/*`
+- **Agent 2:** `src/models/*` (including `src/models/__init__.py`), `src/explainability/*`, `src/simulation/*`, `notebooks/02_model_benchmarking.ipynb`, `tests/test_model_inference.py`
+- **Agent 3:** `app.py`, `src/utils/*`, `assets/*`, `tests/test_feature_engineering.py`, `setup.py`, `requirements.txt`, `README.md`
+
+Key ownership rules:
+- Agent 2 owns `src/models/__init__.py`, implements, and exposes `score_customer()`.
+- Agent 3 must never modify `src/models/__init__.py`.
+- Agent 3 must never import internal model or explainability functions directly.
+- `app.py` may only call `score_customer()` for scoring/inference.
+- If you need something from another agent's module that doesn't exist yet, write against the interface contract in Section 13 and use a temporary stub/mock — do not implement the other agent's logic yourself.
 
 ## 3. The one shared contract
 
-`src/models/__init__.py` (or equivalent) must expose a single function:
+`src/models/__init__.py` exposes the single public integration function:
 ```python
-def score_customer(customer_row) -> dict
+def score_customer(customer_row: pd.Series) -> dict
 ```
-This is the only integration point between the model/explainability layer and the app layer. Never bypass it.
+
+This function is owned and implemented by Agent 2.
+
+`app.py`, owned by Agent 3, may import only this public function:
+```python
+from src.models import score_customer
+```
+
+`app.py` must not directly call:
+- `train_baseline_model()`
+- `train_challenger_model()`
+- `evaluate_model()`
+- `compute_confidence_score()`
+- `compute_anomaly_flag()`
+- `get_shap_values()`
+- `map_to_reason_codes()`
+- `simulate_improvement()`
+
+Those are internal implementation details of Agent 2.
+
+Agent 3 must not modify `src/models/__init__.py`. This is the only integration point between the model/explainability layer and the app layer. Never bypass it.
 
 ## 4. Coding standards
 
