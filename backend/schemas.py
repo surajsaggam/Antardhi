@@ -1,6 +1,6 @@
 """Pydantic schemas for Antardhi FastAPI backend wrapper."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -62,3 +62,31 @@ class WhatIfResponse(BaseModel):
     recommended_loan: float
     recommended_tenure_months: int
     recommended_emi: float
+
+
+class DataCoverage(BaseModel):
+    """Data source availability status across 6 alternative verticals."""
+    upi: bool
+    gst: bool
+    utility: bool
+    telecom: bool
+    ecommerce: bool
+    mobility: bool
+    available_count: int
+    total_count: int = 6
+
+
+class FinancialSignals(BaseModel):
+    """Raw supporting financial indicators (0-100 scale)."""
+    upi_activity: Optional[float] = None
+    cashflow_stability: Optional[float] = None
+    payment_consistency: Optional[float] = None
+
+
+class ApplicantProfileResponse(BaseModel):
+    """Read-only profile response for an applicant."""
+    customer_id: str
+    persona: str
+    data_coverage: DataCoverage
+    financial_signals: FinancialSignals
+

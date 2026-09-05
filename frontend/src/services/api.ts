@@ -57,6 +57,30 @@ export interface WhatIfResponse {
   recommended_emi: number;
 }
 
+export interface DataCoverage {
+  upi: boolean;
+  gst: boolean;
+  utility: boolean;
+  telecom: boolean;
+  ecommerce: boolean;
+  mobility: boolean;
+  available_count: number;
+  total_count: number;
+}
+
+export interface FinancialSignals {
+  upi_activity: number | null;
+  cashflow_stability: number | null;
+  payment_consistency: number | null;
+}
+
+export interface ApplicantProfileResponse {
+  customer_id: string;
+  persona: string;
+  data_coverage: DataCoverage;
+  financial_signals: FinancialSignals;
+}
+
 export class ApiError extends Error {
   status: number;
   detail?: string;
@@ -155,3 +179,23 @@ export async function runWhatIf(
   });
   return handleResponse<WhatIfResponse>(response);
 }
+
+/**
+ * Fetch applicant profile with data source coverage and financial signals:
+ * GET /api/applicants/{customer_id}/profile
+ */
+export async function getApplicantProfile(
+  customerId: string
+): Promise<ApplicantProfileResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/applicants/${encodeURIComponent(customerId)}/profile`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
+  return handleResponse<ApplicantProfileResponse>(response);
+}
+

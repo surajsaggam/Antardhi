@@ -19,7 +19,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.models import score_customer
 from src.simulation.what_if import simulate_improvement
+from src.utils.helpers import fingerprint_indicators
 from backend.schemas import (
+    ApplicantProfileResponse,
     ApplicantSummary,
     AssessmentRequest,
     AssessmentResponse,
@@ -163,3 +165,68 @@ def what_if(request: WhatIfRequest) -> Dict[str, Any]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"What-if simulation error: {str(e)}",
         )
+
+
+@app.get("/api/applicants/{customer_id}/profile", response_model=ApplicantProfileResponse)
+def get_applicant_profile(customer_id: str) -> Dict[str, Any]:
+    """Retrieve applicant data source availability and supporting raw financial signals.
+
+    Data sources (UPI, GST, Utility, Telecom, E-commerce, Mobility) are derived from
+    the applicant's actual raw values in synthetic_credit_data.csv.
+    Financial signals are derived using src.utils.helpers.fingerprint_indicators.
+    """
+    customer_row = get_customer_row(customer_id)
+
+    upi_avail = bool(pd.notna(customer_row.get("upi_monthly_inflow_avg")))
+    gst_avail = bool(pd.notna(customer_row.get("gst_monthly_turnover")))
+    utility_avail = bool(pd.notna(customer_row.get("utility_payment_regularity")))
+    telecom_avail = bool(pd.notna(customer_row.get("telecom_recharge_frequency")))
+    ecommerce_avail = bool(pd.notna(customer_row.get("ecommerce_txn_frequency")))
+    mobility_avail = bool(pd.notna(customer_row.get("mobility_active_days")))
+
+    available_count = int(
+        upi_avail
+        + gst_avail
+        + utility_avail
+        + telecom_avail
+        + ecommerce_avail
+        + mobility_avail
+    )
+
+    signals = fingerprint_indicators(customer_row)
+    upi_act = (
+        round(float(signals["UPI Activity"]), 1)
+        if signals.get("UPI Activity") is not None
+        else None
+    )
+    cash_stab = (
+        round(float(signals["Cashflow Stability"]), 1)
+        if signals.get("Cashflow Stability") is not None
+        else None
+    )
+    pay_cons = (
+        round(float(signals["Payment Consistency"]), 1)
+        if signals.get("Payment Consistency") is not None
+        else None
+    )
+
+    return {
+        "customer_id": str(customer_row["customer_id"]),
+        "persona": str(customer_row["persona"]),
+        "data_coverage": {
+            "upi": upi_avail,
+            "gst": gst_avail,
+            "utility": utility_avail,
+            "telecom": telecom_avail,
+            "ecommerce": ecommerce_avail,
+            "mobility": mobility_avail,
+            "available_count": available_count,
+            "total_count": 6,
+        },
+        "financial_signals": {
+            "upi_activity": upi_act,
+            "cashflow_stability": cash_stab,
+            "payment_consistency": pay_cons,
+        },
+    }
+
